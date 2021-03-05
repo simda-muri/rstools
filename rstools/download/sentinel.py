@@ -9,6 +9,8 @@ import datetime
 import time
 from tqdm import tqdm
 import os
+import re
+
 
 class CopernicusHub:
     """
@@ -30,6 +32,39 @@ class CopernicusHub:
         self._platform  = platform
 
 
+    def ParseName(self, name):
+        """
+        Parses information from a Sentinel filename (e.g., S1A_IW_GRDH_1SDV_20200629T174145_20200629T174210_033235_03D9B9_D763)
+        Returns a dictionary with information.  Currently only supports Sentinel-1 names.
+
+        See https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/naming-conventions
+        """
+
+        if(name[1]!='1'):
+            raise RuntimeError('ParseName function currently only supports Sentinel-1 filenames.')
+
+        parts = re.split('_+',name.split('.')[0])
+
+        out = dict()
+        out['ID'] = parts[0] # Mission ID
+        out['BeamMode'] = parts[1]
+        out['Product'] = parts[2][0:3]
+        if(out['Product']=='GRD'):
+            out['Resolution'] = parts[2][-1] # Resolution class
+
+        out['Level'] = parts[3][0] # Processing level
+        out['Polarization'] = parts[3][-2:] # Polarization, either SH, SV, DH, or DV
+
+        out['StartTime'] = datetime.datetime.strptime(parts[4], '%Y%m%dT%H%M%S')
+        out['EndTime'] = datetime.datetime.strptime(parts[5], '%Y%m%dT%H%M%S')
+        out['AbsOrbit'] = int(parts[6])
+
+        # Figure out the relative orbit number (see https://forum.step.esa.int/t/sentinel-1-relative-orbit-from-filename/7042/2)
+        if(out['ID']=='S1A'):
+            out['RelOrbit'] = 1+ (out['AbsOrbit']-73) % 175
+        elif(out['ID']=='S1B'):
+            out['RelOrbit'] = 1+(out['AbsOrbit']-27) % 175
+        return out
 
     def Search(self, rows=10, sort_dir='desc', **kwargs):
         """ Search for Sentinel-1 data in a particular region and a particular
@@ -56,7 +91,7 @@ class CopernicusHub:
                     - "filename"
                     - "orbitnumber"
                     - "relativeorbitnumber" (used for interferometric applications)
-                    - "polarizationmode" (e.g., 'HH', 'VV', 'HV', 'VH', 'HH HV', 'VV VH')
+                    - "polarisationmode" (e.g., 'HH', 'VV', 'HV', 'VH', 'HH HV', 'VV VH')
 
           RETURNS:
 
@@ -87,7 +122,10 @@ class CopernicusHub:
             raise RuntimeError("Received error from code {} API:\n  {}".format(d['feed']['error']['code'], d['feed']['error']['message']))
 
         # Extract the available imagery
-        return d['feed']['entry']
+        if('entry' not in d['feed']):
+            return []
+        else:
+            return d['feed']['entry']
 
 
     def Download(self, folder, search_result):
@@ -102,6 +140,9 @@ class CopernicusHub:
                     form returned by the Search function.  i.e., there must a
                     list of urls stored under the 'link' key in the dictionary.
                     The download URL is search_result[i]['link'][0]['href'].
+
+            RETURNS:
+                A list of strings containing the filenames of all the downloaded files.
 
         """
 
@@ -118,8 +159,11 @@ class CopernicusHub:
             else:
                 urls = [search_result['link'][0]['href']]
 
+        filenames = []
         for url in urls:
-            self._download_from_url(folder,url)
+            filenames.append( self._download_from_url(folder,url) )
+
+        return filenames
 
 
     def _download_from_url(self,folder, url):
@@ -147,8 +191,10 @@ class CopernicusHub:
             print("ERROR, something went wrong and only part of the file was downloaded.")
         else:
             os.rename(folder+'/'+filename + '.part', folder+'/'+filename)
-            
+
         print(' ')
+
+        return filename
 
 
     def _GetQueryString(self, opts):
@@ -211,7 +257,7 @@ class CopernicusHub:
         # Add all the other possible keys
         for key in opts.keys():
             if(key not in ['region', 'type', 'start_date', 'end_date']):
-                qString += ' AND ' + key + ':' + opts['key']
+                qString += ' AND ' + key + ':' + opts[key]
 
         return qString
 
