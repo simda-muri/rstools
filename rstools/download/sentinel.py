@@ -32,7 +32,7 @@ class CopernicusHub:
         self._platform  = platform
 
 
-    def ParseName(self, name):
+    def ParseName(name):
         """
         Parses information from a Sentinel filename (e.g., S1A_IW_GRDH_1SDV_20200629T174145_20200629T174210_033235_03D9B9_D763)
         Returns a dictionary with information.  Currently only supports Sentinel-1 names.
@@ -111,6 +111,8 @@ class CopernicusHub:
                 print('In Search Attempt {}:\n  Received "Too Many Attempts" from API.  Waiting 2s and trying again'.format(num_tries))
                 time.sleep(2)
             else:
+                with open('api_error.html','wb') as f:
+                    f.write(r.content)
                 raise RuntimeError("Received error code {} from API.".format(r.status_code))
 
         d = r.json()
@@ -161,7 +163,9 @@ class CopernicusHub:
 
         filenames = []
         for url in urls:
-            filenames.append( self._download_from_url(folder,url) )
+            res = self._download_from_url(folder,url)
+            if(res is not None):
+                filenames.append( res )
 
         return filenames
 
@@ -171,7 +175,15 @@ class CopernicusHub:
         Downloads the sentinel zip file from a url to a folder.
         """
 
+
         r = requests.get(url, stream=True, auth=(self._user,self._pass))
+        if('content-disposition' not in r.headers):
+            msg = ''
+            if('<message xml:lang="en">' in str(r.content)):
+                msg = str(r.content).split('<message xml:lang="en">')[1].split('</message>')[0]
+
+            raise RuntimeError('Failed to download file.  This is most likely because user offline quota has been exceeded.  Wait an hour and try again.\n\n'+msg )
+
         filename = r.headers['content-disposition'].split('=')[1][1:-1]
 
 
