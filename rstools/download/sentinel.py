@@ -32,7 +32,7 @@ class CopernicusHub:
         self._platform  = platform
 
 
-    def ParseName(name):
+    def ParseName(self,name):
         """
         Parses information from a Sentinel filename (e.g., S1A_IW_GRDH_1SDV_20200629T174145_20200629T174210_033235_03D9B9_D763)
         Returns a dictionary with information.  Currently only supports Sentinel-1 names.
