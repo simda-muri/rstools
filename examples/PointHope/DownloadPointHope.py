@@ -1,6 +1,6 @@
 """
 
-This example shows how to use the CRREL-SIRC rstools package to search for
+This example shows how to use the rstools package to search for
 Sentinel-1 imagery and download the files.  It is also possible to process
 the data using the rstools interface to SNAP.   See NaresStrait "ProcessSentinel.py"
 example for details.
