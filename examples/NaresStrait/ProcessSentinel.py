@@ -6,7 +6,8 @@ For reference, see
 """
 import glob
 
-from rstools.processing import SentinelProcessor
+import pyroSAR.snap.auxil as sar #import parse_recipe, parse_node, gpt
+
 
 data_folder = 'sentinel-data'
 out_dir = data_folder+'/processed/'
@@ -16,32 +17,59 @@ gpt_exe = '/Applications/snap/bin/gpt'
 # 30D0 is a good look of the upper neck
 # 7ADB is a good look at the main basin and south
 # 50C1 is another good look at the main basin
-zip_list =  glob.glob(data_folder + '/S1*50C1*.zip')
+files =  glob.glob(data_folder + '/S1*50C1*.zip')
 
 # Loop over all the images
-for zip_file in zip_list:
+for zip_file in files[1:]:
 
-    # Extract the name of the zip_file
-    base_name = zip_file.split('/')[-1].replace('.zip','')
+    print('Processing ', zip_file,flush=True)
 
-    proc = SentinelProcessor(zip_file, gpt_exe, out_dir)
+    steps = []
 
-    proc.ApplyOrbit()
+    workflow = sar.parse_recipe('blank')
 
-    proc.RemoveThermalNoise('HH')
-    proc.CleanTemp()
+    steps.append( sar.parse_node('Read') )
+    steps[-1].parameters['file'] = zip_file
+    steps[-1].parameters['formatName'] = 'SENTINEL-1'
+    workflow.insert_node(steps[-1])
 
-    proc.ApplyCalibration()
-    proc.CleanTemp()
+    steps.append( sar.parse_node('Apply-Orbit-File') )
+    steps[-1].parameters['orbitType'] = 'Sentinel Precise (Auto Download)'
+    workflow.insert_node(steps[-1], before=steps[-2].id)
 
-    proc.ApplyEllipsoidalCorrection()
-    proc.CleanTemp()
+    steps.append( sar.parse_node('ThermalNoiseRemoval') )
+    steps[-1].parameters['selectedPolarisations'] = ['HH,HV']
+    workflow.insert_node(steps[-1], before=steps[-2].id)
 
-    proc.Reproject('3413')
-    proc.CleanTemp()
+    # steps.append( parse_node('Remove-GRD-Border-Noise') )
+    # steps[-1].parameters['selectedPolarisations'] = ['HH','HV']
+    # workflow.insert_node(steps[-1], before=steps[-2].id)
 
-    proc.ConvertToDB()
-    proc.CleanTemp()
+    steps.append( sar.parse_node('Calibration') )
+    steps[-1].parameters['outputSigmaBand'] = 'true'
+    workflow.insert_node(steps[-1], before=steps[-2].id)
 
-    proc.Write('GeoTiff')
-    proc.CleanTemp()
+    # steps.append( sar.parse_node('Speckle-Filter') )
+    # steps[-1].parameters['filter'] = 'Refined Lee'
+    # workflow.insert_node(steps[-1], before=steps[-2].id)
+
+    steps.append( sar.parse_node('Ellipsoid-Correction-GG') )
+    workflow.insert_node(steps[-1], before=steps[-2].id)
+
+    # # steps.append( sar.parse_node('Reproject') )
+    # # steps[-1].parameters['crs'] = 'EPSG:3413'
+    # # workflow.insert_node(steps[-1], before=steps[-2].id)
+
+    steps.append( sar.parse_node('LinearToFromdB') )
+    workflow.insert_node(steps[-1], before=steps[-2].id)
+
+    steps.append( sar.parse_node('Write') )
+    steps[-1].parameters['file'] = 'ProcessedSentinel/' + zip_file[0:-4].split('/')[-1] + '_PROCESSED'
+    steps[-1].parameters['formatName'] = 'BEAM-DIMAP'
+    workflow.insert_node(steps[-1], before=steps[-2].id)
+
+    workflow.write('SarProcessing')
+
+    grps = sar.groupbyWorkers('SarProcessing.xml', n=2)
+    print(grps)
+    sar.gpt('SarProcessing.xml', './results', groups=grps)#, outdir='./results')
